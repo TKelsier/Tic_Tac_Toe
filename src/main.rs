@@ -12,20 +12,22 @@ use std::time::Duration;
 struct Game {
     vec_board: Vec<Board>,
     vec_board_iter: Vec<u16>,
-    board_iter: usize,
     players: [Player; 2],
-    player_iter: usize,
     winner: WonPlayer,
-    input_timeout_duration: u64,
+    timeout_duration_len: u64,
     finished: bool,
     origin_coordinates: (u16, u16),
+    end_msg: String,
+    board_num: u16,
 }
 struct Board {
     name: u16,
     positions: [u8; 9],
     display_positions: Vec<StyledContent<String>>,
     completed: bool,
+    winner: u8,
     completion_reason: String,
+    first_move: bool,
 }
 
 struct Player {
@@ -44,30 +46,26 @@ impl Game {
         Self {
             vec_board: Vec::new(),
             vec_board_iter: Vec::new(),
-            board_iter: 0,
             players: [Player::new("Player 1"), Player::new("Player 2")],
-            player_iter: 0,
             winner: WonPlayer::None,
-            input_timeout_duration: 999999,
+            timeout_duration_len: 999999,
             finished: false,
             origin_coordinates: (0, 0),
+            end_msg: "".to_string(),
+            board_num: 1,
         }
     }
-    fn board_gen(&mut self, num_boards: u16) {
-        for num in 0..num_boards {
+    fn board_gen(&mut self) {
+        for num in 0..self.board_num {
             self.vec_board.push(Board::new(num + 1));
             self.vec_board_iter.push(num);
         }
-        println!("Number of boards set to: {}", num_boards);
+        println!("Number of boards set to: {}", self.board_num);
     }
-    fn set_tdl(&mut self, len: u64) {
-        self.input_timeout_duration = len;
-        println!("Duration for each turn set to: {}s", len);
-    }
-    fn grab_user_input(&self) -> crossterm::Result<KeyCode> {
+    fn grab_user_input(&mut self) -> crossterm::Result<KeyCode> {
         enable_raw_mode().expect("Could not enable terminal raw mode");
         let key_event = loop {
-            if poll(Duration::from_secs(self.input_timeout_duration))? {
+            if poll(Duration::from_secs(self.timeout_duration_len))? {
                 match read()? {
                     Event::Key(event) => break event.code,
                     _ => continue,
@@ -81,25 +79,23 @@ impl Game {
     }
     fn game_loop(&mut self) {
         while !self.finished {
-            for i in 0..self.vec_board_iter.len() {
-                self.update_bi(i as usize);
-                if !self.vec_board[self.board_iter].completed {
-                    self.player_turns();
+            for board_iter in 0..self.vec_board_iter.len() {
+                if !self.vec_board[board_iter].completed {
+                    self.player_turns(board_iter);
                     self.check_game_finished();
                 } else {
                     break;
                 }
             }
         }
-        return;
     }
-    fn execute_player_turn(&mut self) {
-        if self.vec_board[self.board_iter].check_first_move() {
-            self.vec_board[self.board_iter].update_pos(0, self.player_iter as u8);
+    fn execute_player_turn(&mut self, board_iter: usize, player_iter: usize) {
+        if self.vec_board[board_iter].first_move {
+            self.vec_board[board_iter].update_pos(0, player_iter as u8);
         } else {
             print!(
                 "{} Please make your move (1-9): ",
-                self.players[self.player_iter].name
+                self.players[player_iter].name
             );
             stdout().flush().unwrap();
             let keycode_input = loop {
@@ -109,46 +105,46 @@ impl Game {
                 }
             };
             match keycode_input {
-                Char('0') => self.vec_board[self.board_iter].update_pos(0, self.player_iter as u8),
-                Char('1') if { self.vec_board[self.board_iter].positions[0] == 0 } => {
-                    self.vec_board[self.board_iter].update_pos(1, self.player_iter as u8)
+                Char('0') => self.vec_board[board_iter].update_pos(0, player_iter as u8),
+                Char('1') if { self.vec_board[board_iter].positions[0] == 0 } => {
+                    self.vec_board[board_iter].update_pos(1, player_iter as u8)
                 }
-                Char('2') if { self.vec_board[self.board_iter].positions[1] == 0 } => {
-                    self.vec_board[self.board_iter].update_pos(2, self.player_iter as u8)
+                Char('2') if { self.vec_board[board_iter].positions[1] == 0 } => {
+                    self.vec_board[board_iter].update_pos(2, player_iter as u8)
                 }
-                Char('3') if { self.vec_board[self.board_iter].positions[2] == 0 } => {
-                    self.vec_board[self.board_iter].update_pos(3, self.player_iter as u8)
+                Char('3') if { self.vec_board[board_iter].positions[2] == 0 } => {
+                    self.vec_board[board_iter].update_pos(3, player_iter as u8)
                 }
-                Char('4') if { self.vec_board[self.board_iter].positions[3] == 0 } => {
-                    self.vec_board[self.board_iter].update_pos(4, self.player_iter as u8)
+                Char('4') if { self.vec_board[board_iter].positions[3] == 0 } => {
+                    self.vec_board[board_iter].update_pos(4, player_iter as u8)
                 }
-                Char('5') if { self.vec_board[self.board_iter].positions[4] == 0 } => {
-                    self.vec_board[self.board_iter].update_pos(5, self.player_iter as u8)
+                Char('5') if { self.vec_board[board_iter].positions[4] == 0 } => {
+                    self.vec_board[board_iter].update_pos(5, player_iter as u8)
                 }
-                Char('6') if { self.vec_board[self.board_iter].positions[5] == 0 } => {
-                    self.vec_board[self.board_iter].update_pos(6, self.player_iter as u8)
+                Char('6') if { self.vec_board[board_iter].positions[5] == 0 } => {
+                    self.vec_board[board_iter].update_pos(6, player_iter as u8)
                 }
-                Char('7') if { self.vec_board[self.board_iter].positions[6] == 0 } => {
-                    self.vec_board[self.board_iter].update_pos(7, self.player_iter as u8)
+                Char('7') if { self.vec_board[board_iter].positions[6] == 0 } => {
+                    self.vec_board[board_iter].update_pos(7, player_iter as u8)
                 }
-                Char('8') if { self.vec_board[self.board_iter].positions[7] == 0 } => {
-                    self.vec_board[self.board_iter].update_pos(8, self.player_iter as u8)
+                Char('8') if { self.vec_board[board_iter].positions[7] == 0 } => {
+                    self.vec_board[board_iter].update_pos(8, player_iter as u8)
                 }
-                Char('9') if { self.vec_board[self.board_iter].positions[8] == 0 } => {
-                    self.vec_board[self.board_iter].update_pos(9, self.player_iter as u8)
+                Char('9') if { self.vec_board[board_iter].positions[8] == 0 } => {
+                    self.vec_board[board_iter].update_pos(9, player_iter as u8)
                 }
-                Char('f') => self.forfeit(),
+                Char('f') => self.forfeit(board_iter, player_iter),
                 Char('q') => self.quit(),
-                _ => self.vec_board[self.board_iter].update_pos(0, self.player_iter as u8),
+                _ => self.vec_board[board_iter].update_pos(0, player_iter as u8),
             }
         }
     }
-    fn input_board_num(&self) -> u16 {
+    fn input_board_num(&mut self) {
         let mut my_string = String::new();
         print!("Please enter the starting number of boards to be played (Greater than 0): ");
         stdout().flush().unwrap();
 
-        let mut board_num = loop {
+        self.board_num = loop {
             my_string.clear();
 
             stdin()
@@ -160,19 +156,18 @@ impl Game {
             }
             stdout().flush().unwrap();
         };
-        if board_num == 0 {
-            board_num = 1;
+        if self.board_num == 0 {
+            self.board_num = 1;
         }
-        board_num
     }
-    fn input_timeout_duration_len(&self) -> u64 {
+    fn set_timeout_duration_len(&mut self) {
         let mut my_string = String::new();
         print!(
             "Please enter the duration, in seconds, for each player's turn input (0 = infinite): "
         );
         stdout().flush().unwrap();
 
-        let mut timeout_duration_len = loop {
+        self.timeout_duration_len = loop {
             my_string.clear();
 
             stdin()
@@ -185,10 +180,9 @@ impl Game {
             }
             stdout().flush().unwrap();
         };
-        if timeout_duration_len == 0 {
-            timeout_duration_len = 999999;
+        if self.timeout_duration_len == 0 {
+            self.timeout_duration_len = 999999;
         }
-        timeout_duration_len
     }
     fn update_bvi(&mut self, i: usize) {
         if self.vec_board_iter.len() > 1 {
@@ -197,47 +191,35 @@ impl Game {
             self.vec_board_iter.pop();
         }
     }
-    fn update_bi(&mut self, i: usize) {
-        self.board_iter = self.vec_board_iter[i] as usize;
-    }
-    fn update_pi(&mut self, i: usize) {
-        self.player_iter = i;
-    }
-    fn display_board(&self) {
+    fn display_board(&self, board_iter: usize) {
         reset_terminal();
-        println!("{}", self.vec_board[self.board_iter]);
+        println!("{}", self.vec_board[board_iter]);
         cursor_move_to(self.origin_coordinates.0, self.origin_coordinates.1 + 7);
         self.score_board();
         cursor_move_to(self.origin_coordinates.0, self.origin_coordinates.1 + 4);
     }
-    fn player_turns(&mut self) {
+    fn player_turns(&mut self, board_iter: usize) {
         for player_iter in 0..2 {
-            self.update_pi(player_iter);
-            self.display_board();
-            self.execute_player_turn();
-            if self.vec_board[self.board_iter].check_win(self.player_iter as u8) {
-                self.vec_board[self.board_iter].update_cmpd(1, &self.players[player_iter].name);
-                self.update_bvi(self.board_iter);
+            self.display_board(board_iter);
+            self.vec_board[board_iter].check_first_move();
+            self.execute_player_turn(board_iter, player_iter);
+            self.vec_board[board_iter]
+                .check_completed(player_iter as u8 + 1, &self.players[player_iter].name);
+            if self.vec_board[board_iter].winner != 0 {
                 self.players[player_iter].add_point();
-                self.display_board();
-                sleep(Duration::from_secs(3));
-                return;
-            } else if self.vec_board[self.board_iter].check_tie() {
-                self.vec_board[self.board_iter].update_cmpd(0, &self.players[player_iter].name);
-                self.update_bvi(self.board_iter);
-                self.display_board();
+                self.update_bvi(board_iter);
+                self.display_board(board_iter);
                 sleep(Duration::from_secs(3));
                 return;
             }
         }
         if self.vec_board_iter.len() > 1 {
-            self.display_board();
+            self.display_board(board_iter);
             sleep(Duration::from_secs(3));
         }
-        return;
     }
     fn check_game_finished(&mut self) {
-        if self.vec_board_iter.len() == 0 {
+        if self.vec_board_iter.is_empty() {
             self.finished = true;
         } else {
             self.finished = false;
@@ -251,16 +233,18 @@ impl Game {
         };
     }
     fn game_continue(&mut self) {
-        if self.prompt_continue() {
+        self.prompt_continue();
+        if !self.finished {
             self.vec_board
                 .push(Board::new(self.vec_board.len() as u16 + 1));
             self.vec_board_iter.push(self.vec_board.len() as u16 - 1);
-            self.check_game_finished();
+            self.finished = true;
         } else {
+            reset_terminal();
             println!("Game Terminated");
         }
     }
-    fn prompt_continue(&mut self) -> bool {
+    fn prompt_continue(&mut self) {
         let mut my_string = String::new();
         println!("Since the game ended in a tie, would you like to continue with one more board?");
         print!("Respond with any form of yes or no: ");
@@ -272,31 +256,36 @@ impl Game {
             .read_line(&mut my_string)
             .expect("Did not enter a correct string");
         my_string = my_string.trim().to_lowercase();
-        if my_string == "y".to_string() || my_string == "yes".to_string() {
-            return true;
+        if my_string == *"y".to_string() || my_string == *"yes".to_string() {
+            self.finished = false;
         }
-        false
     }
-    fn end_msg_gen(&mut self) -> String {
+    fn end_msg_gen(&mut self) {
         match self.winner {
-            WonPlayer::Circle => format!(
-                "{} has won with {} points, compared to {}'s {} points",
-                self.players[0].name,
-                self.players[0].points,
-                self.players[1].name,
-                self.players[1].points,
-            ),
-            WonPlayer::Crosses => format!(
-                "{} has won with {} points, compared to {}'s {} points",
-                self.players[1].name,
-                self.players[1].points,
-                self.players[0].name,
-                self.players[0].points,
-            ),
-            WonPlayer::None => format!(
-                "The game ended in a tie of {} points",
-                self.players[0].points,
-            ),
+            WonPlayer::Circle => {
+                self.end_msg = format!(
+                    "{} has won with {} points, compared to {}'s {} points",
+                    self.players[0].name,
+                    self.players[0].points,
+                    self.players[1].name,
+                    self.players[1].points,
+                )
+            }
+            WonPlayer::Crosses => {
+                self.end_msg = format!(
+                    "{} has won with {} points, compared to {}'s {} points",
+                    self.players[1].name,
+                    self.players[1].points,
+                    self.players[0].name,
+                    self.players[0].points,
+                )
+            }
+            WonPlayer::None => {
+                self.end_msg = format!(
+                    "The game ended in a tie of {} points",
+                    self.players[0].points,
+                )
+            }
         }
     }
     fn score_board(&self) {
@@ -312,8 +301,8 @@ impl Game {
 
         println!("-=-=- Leaderboard -=-=-\n{}", full_text);
     }
-    fn forfeit(&mut self) {
-        self.vec_board[self.board_iter].update_cmpd(2, &self.players[self.player_iter].name);
+    fn forfeit(&mut self, board_iter: usize, player_iter: usize) {
+        self.vec_board[board_iter].update_cmpd(2, &self.players[player_iter].name);
     }
     fn quit(&mut self) {
         self.finished = true;
@@ -339,7 +328,9 @@ impl Board {
                 "-".to_string().bold(),
             ],
             completed: false,
+            winner: 0,
             completion_reason: "Not Completed".to_string(),
+            first_move: true,
         }
     }
     fn update_pos(&mut self, mut position_num: u8, turn: u8) {
@@ -357,7 +348,7 @@ impl Board {
             }
         }
     }
-    fn update_cmpd(&mut self, type_cmpd: u8, winner_name: &String) {
+    fn update_cmpd(&mut self, type_cmpd: u8, winner_name: &str) {
         self.completed = true;
         if type_cmpd == 0 {
             self.completion_reason = "Tied".to_string();
@@ -375,64 +366,49 @@ impl Board {
 
         bool_var
     }
-    fn check_win(&mut self, mut player_iter: u8) -> bool {
-        player_iter = player_iter + 1;
-        let mut num = 0;
-        for n in 0..3 {
-            let pos_iter = num;
-            if self.check_equal(pos_iter, player_iter)
-                && self.check_equal(pos_iter + 1, player_iter)
-                && self.check_equal(pos_iter + 2, player_iter)
-            {
-                self.highlight_yellow(
-                    pos_iter as usize,
-                    pos_iter as usize + 1,
-                    pos_iter as usize + 2,
-                    player_iter,
-                );
-                return true;
-            } else if self.check_equal(n, player_iter)
-                && self.check_equal(n + 3, player_iter)
-                && self.check_equal(n + 6, player_iter)
-            {
-                self.highlight_yellow(n as usize, n as usize + 3, n as usize + 6, player_iter);
-                return true;
-            }
-            num = pos_iter + 3;
-        }
-        if self.check_equal(0, player_iter)
-            && self.check_equal(4, player_iter)
-            && self.check_equal(8, player_iter)
-        {
-            self.highlight_yellow(0 as usize, 4 as usize, 8 as usize, player_iter);
-            return true;
-        } else if self.check_equal(2, player_iter)
-            && self.check_equal(4, player_iter)
-            && self.check_equal(6, player_iter)
-        {
-            self.highlight_yellow(2 as usize, 4 as usize, 6 as usize, player_iter);
-            return true;
-        }
-        return false;
-    }
-    fn check_tie(&self) -> bool {
-        let mut tie = true;
-        for num in 0..9 {
-            if self.check_equal(num, 0) {
-                tie = false
-            }
-        }
-        tie
-    }
-    fn check_first_move(&self) -> bool {
-        let mut first_move = true;
-        for key in 0..9 {
-            if !self.check_equal(key, 0) {
-                first_move = false;
-            }
-        }
+    fn check_completed(&mut self, player_iter: u8, player_name: &str) {
+        let win_conditions: [[usize; 3]; 8] = [
+            [0, 1, 2],
+            [3, 4, 5],
+            [6, 7, 8],
+            [0, 3, 6],
+            [1, 4, 7],
+            [2, 5, 8],
+            [0, 4, 8],
+            [2, 4, 6],
+        ];
 
-        first_move
+        for condition in &win_conditions {
+            if self.positions[condition[0]] == player_iter
+                && self.positions[condition[1]] == player_iter
+                && self.positions[condition[2]] == player_iter
+            {
+                self.update_cmpd(1, player_name);
+                self.highlight_yellow(condition, player_iter);
+                self.winner = player_iter;
+                break;
+            }
+        }
+        if !self.completed {
+            let mut x: u8 = 0;
+            for num in 0..9 {
+                if self.check_equal(num, 0) {
+                    x += 1;
+                } else {
+                    break;
+                }
+            }
+            if x == 9 {
+                self.update_cmpd(0, player_name);
+            }
+        }
+    }
+    fn check_first_move(&mut self) {
+        for pos in 0..9 {
+            if !self.check_equal(pos, 0) {
+                self.first_move = false;
+            }
+        }
     }
     fn gen_rand_pos(&self) -> u8 {
         let mut rand_pos_vec = Vec::new();
@@ -444,15 +420,15 @@ impl Board {
         fastrand::shuffle(&mut rand_pos_vec);
         rand_pos_vec[0] as u8
     }
-    fn highlight_yellow(&mut self, pos1: usize, pos2: usize, pos3: usize, player_iter: u8) {
+    fn highlight_yellow(&mut self, condition: &[usize; 3], player_iter: u8) {
         if player_iter == 0 {
-            self.display_positions[pos1] = "0".to_string().bold().yellow();
-            self.display_positions[pos2] = "0".to_string().bold().yellow();
-            self.display_positions[pos3] = "0".to_string().bold().yellow();
+            for pos in condition {
+                self.display_positions[*pos] = "0".to_string().bold().yellow();
+            }
         } else {
-            self.display_positions[pos1] = "X".to_string().bold().yellow();
-            self.display_positions[pos2] = "X".to_string().bold().yellow();
-            self.display_positions[pos3] = "X".to_string().bold().yellow();
+            for pos in condition {
+                self.display_positions[*pos] = "X".to_string().bold().yellow();
+            }
         }
     }
 }
@@ -476,7 +452,6 @@ impl fmt::Display for Board {
         ];
 
         let full_text = text.join("\n");
-
         write!(f, "{}", full_text)
     }
 }
@@ -512,15 +487,17 @@ fn execute(mut game: Game) {
     };
     if terminal_size > (80, 29) {
         game.origin_coordinates = set_starting_pos();
-        game.board_gen(game.input_board_num());
-        game.set_tdl(game.input_timeout_duration_len());
+        game.input_board_num();
+        game.board_gen();
+        game.set_timeout_duration_len();
         while !game.finished {
             game.game_loop();
             reset_terminal();
             game.check_game_winner();
+            game.end_msg_gen();
             println!(
                 "-=-=-=-=- All Boards Have Been Completed! -=-=-=-=-\n{}",
-                game.end_msg_gen(),
+                game.end_msg,
             );
             cursor_move_to(game.origin_coordinates.0, game.origin_coordinates.1 + 6);
             game.score_board();
